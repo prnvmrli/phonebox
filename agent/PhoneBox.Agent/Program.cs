@@ -538,7 +538,7 @@ app.Run();
 // Restart requested from the settings page (e.g. Wi-Fi turned on): hand over to a fresh instance.
 single.ReleaseMutex();
 single.Dispose();
-if (AppRestart.Requested && AppRestart.ServiceManaged(Environment.GetEnvironmentVariable("INVOCATION_ID"), Environment.GetEnvironmentVariable("XPC_SERVICE_NAME")))
+if (AppRestart.Requested && AppRestart.ServiceManaged(File.Exists("/proc/self/cgroup") ? File.ReadAllText("/proc/self/cgroup") : null, Environment.GetEnvironmentVariable("XPC_SERVICE_NAME")))
     Environment.ExitCode = AppRestart.ExitCodeForRestart;
 else if (AppRestart.Requested && Environment.ProcessPath is { } exe)
     System.Diagnostics.Process.Start(AppRestart.StartInfo(exe, args));

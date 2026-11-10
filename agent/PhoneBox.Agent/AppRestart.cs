@@ -13,10 +13,14 @@ public static class AppRestart
     /// </summary>
     public const int ExitCodeForRestart = 75;
 
-    /// <param name="invocationId">INVOCATION_ID, set by systemd for its services.</param>
-    /// <param name="xpcServiceName">XPC_SERVICE_NAME: the launchd job label; "0" in a Terminal session.</param>
-    internal static bool ServiceManaged(string? invocationId, string? xpcServiceName) =>
-        !string.IsNullOrEmpty(invocationId) || xpcServiceName is { Length: > 0 } and not "0";
+    /// <summary>
+    /// Only the services scripts/install.sh --autostart creates: a shell inside another app (VS Code, a terminal that
+    /// runs as a systemd service) carries that app's XPC_SERVICE_NAME / cgroup, and nothing would start the agent again.
+    /// </summary>
+    /// <param name="cgroup">/proc/self/cgroup on Linux.</param>
+    /// <param name="xpcServiceName">XPC_SERVICE_NAME: the launchd job label on macOS.</param>
+    internal static bool ServiceManaged(string? cgroup, string? xpcServiceName) =>
+        cgroup?.Contains("/phonebox.service") == true || xpcServiceName == "net.oxog.phonebox.agent";
 
     internal static ProcessStartInfo StartInfo(string executable, string[] args)
     {

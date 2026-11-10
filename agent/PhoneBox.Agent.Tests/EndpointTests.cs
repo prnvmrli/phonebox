@@ -39,12 +39,14 @@ public sealed class EndpointTests
     }
 
     [Theory]
-    [InlineData("4f1c", null, true)]                        // systemd user service
-    [InlineData(null, "net.oxog.phonebox.agent", true)]     // launchd agent
-    [InlineData(null, "0", false)]                          // started from Terminal
+    [InlineData("0::/user.slice/user-1000.slice/user@1000.service/app.slice/phonebox.service\n", null, true)] // systemd unit from install.sh
+    [InlineData(null, "net.oxog.phonebox.agent", true)]                                                     // launchd agent from install.sh
+    [InlineData(null, "0", false)]                                                                          // started from Terminal
+    [InlineData(null, "application.com.microsoft.VSCode.12345.67890", false)]                              // VS Code's terminal
+    [InlineData("0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-terminal-server.service\n", null, false)]
     [InlineData(null, null, false)]
-    public void ServiceManagersRestartTheAgentThemselves(string? invocationId, string? xpc, bool expected) =>
-        Assert.Equal(expected, AppRestart.ServiceManaged(invocationId, xpc));
+    public void ServiceManagersRestartTheAgentThemselves(string? cgroup, string? xpc, bool expected) =>
+        Assert.Equal(expected, AppRestart.ServiceManaged(cgroup, xpc));
 
     [Fact]
     public void TheUsbTunnelHasItsOwnPortBesideTheWifiDefault()
