@@ -98,7 +98,7 @@ public static class Shortcuts
                     break;
 #else
                 case "builtin:lock":
-                    if (OperatingSystem.IsMacOS()) Unix("pmset", "displaysleepnow");
+                    if (OperatingSystem.IsMacOS()) LockMac();
                     else if (Sh.Run("loginctl", "lock-session") is null) Unix("xdg-screensaver", "lock");
                     break;
                 case "builtin:monitor-off":
@@ -137,6 +137,19 @@ public static class Shortcuts
     {
         if (Sh.Run(tool, args) is null && Sh.Which(tool) is null) throw new InvalidOperationException($"{tool} is not installed");
     }
+
+    /// <summary>
+    /// Locks at once, like Lock Screen in the menu bar; display sleep alone only locks after the "require password"
+    /// delay. SACLockScreenImmediate is private (login.framework), so a macOS without it falls back to display sleep.
+    /// </summary>
+    private static void LockMac()
+    {
+        try { SACLockScreenImmediate(); }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException) { Unix("pmset", "displaysleepnow"); }
+    }
+
+    [DllImport("/System/Library/PrivateFrameworks/login.framework/Versions/Current/login")]
+    private static extern int SACLockScreenImmediate();
 #endif
 }
 

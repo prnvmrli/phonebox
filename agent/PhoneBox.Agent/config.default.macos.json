@@ -45,8 +45,8 @@
     { "id": "settings", "label": "Settings", "icon": "⚙️", "color": "#94a3b8", "cmd": "open", "args": "-a \"System Settings\"" },
     { "id": "monitor", "label": "Activity Monitor", "icon": "📊", "color": "#22c55e", "cmd": "open", "args": "-a \"Activity Monitor\"" },
     { "id": "mute", "label": "Mute", "icon": "🔇", "color": "#f59e0b", "cmd": "builtin:mute" },
-    { "id": "monitoroff", "label": "Screen Off", "icon": "🌙", "color": "#6366f1", "cmd": "builtin:monitor-off" },
-    { "id": "wake", "label": "Wake", "icon": "☀️", "color": "#eab308", "cmd": "caffeinate", "args": "-u -t 2" },
+    // Peekaboo: one tap turns the display off (the Mac keeps running), the next turns it back on
+    { "id": "peekaboo", "label": "Peekaboo", "icon": "🙈", "color": "#6366f1", "cmd": "builtin:monitor-off", "offCmd": "caffeinate", "offArgs": "-u -t 2", "toggle": true },
     { "id": "lock", "label": "Lock", "icon": "🔒", "color": "#ef4444", "cmd": "builtin:lock" }
   ]
 }

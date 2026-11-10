@@ -655,8 +655,8 @@ const PRESETS_MACOS = [
   ['shortcuts', 'Run a Shortcut (args: run "Name")'],
   ['osascript', 'AppleScript (args: -e "…")'],
   ['builtin:mute', 'Built-in: toggle mute'],
-  ['builtin:monitor-off', 'Built-in: sleep the display'],
-  ['builtin:lock', 'Built-in: lock (sleeps the display)'],
+  ['builtin:monitor-off', 'Built-in: turn the display off (the Mac keeps running)'],
+  ['builtin:lock', 'Built-in: lock the screen now'],
 ];
 const presets = () => (osName === 'linux' ? PRESETS_LINUX : osName === 'macos' ? PRESETS_MACOS : PRESETS);
 const PRESETS = [
