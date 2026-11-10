@@ -22,7 +22,8 @@ import javax.net.ssl.X509TrustManager
 /**
  * Connection to the PhoneBox agent on the PC.
  *
- * 1. USB: http://127.0.0.1:8765, tunnelled by "adb reverse" while the cable is plugged in.
+ * 1. USB: http://127.0.0.1:8765, tunnelled by "adb reverse" while the cable is plugged in. Every request carries the
+ *    key the agent handed over through adb (see UsbKeyReceiver): other apps on the phone can reach the tunnel too.
  * 2. Wi-Fi / Tailscale: https://<pc-address>:<port>. The address list, a token and the SHA-256 fingerprint of the
  *    agent's self-signed certificate are fetched over USB ("pairing") and stored. Only that exact certificate is
  *    trusted (pinning), and every request carries the token.
@@ -40,6 +41,12 @@ class AgentLink(context: Context) {
         private set
 
     private val prefs = context.getSharedPreferences("pairing", Context.MODE_PRIVATE)
+    private val usbPrefs = context.getSharedPreferences(USB_PREFS, Context.MODE_PRIVATE)
+
+    private fun usbConnection(pathAndQuery: String): HttpURLConnection =
+        (URL("$USB_BASE$pathAndQuery").openConnection() as HttpURLConnection).apply {
+            usbPrefs.getString("token", null)?.let { setRequestProperty("Authorization", "Bearer $it") }
+        }
 
     /** A computer this phone is paired with; the certificate fingerprint is its id. */
     private class Pc(val id: String, val name: String, val hosts: List<String>, val port: Int, val token: String) {
@@ -131,7 +138,7 @@ class AgentLink(context: Context) {
     }
 
     private fun usb(method: String, pathAndQuery: String, readTimeout: Int = 4000): Reply? = try {
-        val c = URL("$USB_BASE$pathAndQuery").openConnection() as HttpURLConnection
+        val c = usbConnection(pathAndQuery)
         c.connectTimeout = 400 // refused instantly when no adb reverse tunnel exists
         send(c, method, readTimeout)
     } catch (e: Exception) {
@@ -169,7 +176,7 @@ class AgentLink(context: Context) {
     private fun send(c: HttpURLConnection, method: String, readTimeout: Int = 4000): Reply {
         val controlPost = method == "POST" && c.url.path.startsWith("/api/controls/")
         c.requestMethod = method
-        c.setRequestProperty("X-PhoneBox-App", appVersion) // lets the agent offer updates
+        c.setRequestProperty("X-PhoneBox-App", appVersion) // marks the panel app (approvals, USB key hand-over)
         c.setRequestProperty("X-PhoneBox-Device", deviceId)
         c.setRequestProperty("X-PhoneBox-Model", deviceModel)
         // A workflow or service restart can take longer than a state poll.
@@ -197,7 +204,7 @@ class AgentLink(context: Context) {
         lastPair = now
         background.execute {
             try {
-                val c = URL("$USB_BASE/api/pair").openConnection() as HttpURLConnection
+                val c = usbConnection("/api/pair")
                 c.connectTimeout = 800
                 c.readTimeout = 3000
                 val j = JSONObject(c.inputStream.bufferedReader().readText())
@@ -233,6 +240,8 @@ class AgentLink(context: Context) {
 
     companion object {
         private const val USB_BASE = "http://127.0.0.1:8765"
+        /** Separate from "pairing", which the 0.6.x migration clears. */
+        const val USB_PREFS = "usb"
         /** The agent sends "state" every second, so a silent connection for this long is dead. */
         private const val STREAM_READ_TIMEOUT = 8000
     }

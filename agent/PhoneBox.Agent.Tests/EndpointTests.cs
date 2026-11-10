@@ -37,4 +37,19 @@ public sealed class EndpointTests
         var hosted = AppRestart.StartInfo("dotnet", ["--port", "18765"]);
         Assert.EndsWith("PhoneBoxAgent.dll", hosted.ArgumentList[0]);
     }
+
+    [Theory]
+    [InlineData("4f1c", null, true)]                        // systemd user service
+    [InlineData(null, "net.oxog.phonebox.agent", true)]     // launchd agent
+    [InlineData(null, "0", false)]                          // started from Terminal
+    [InlineData(null, null, false)]
+    public void ServiceManagersRestartTheAgentThemselves(string? invocationId, string? xpc, bool expected) =>
+        Assert.Equal(expected, AppRestart.ServiceManaged(invocationId, xpc));
+
+    [Fact]
+    public void TheUsbTunnelHasItsOwnPortBesideTheWifiDefault()
+    {
+        Assert.Equal(8767, AgentEndpoint.FromArgs([]).TunnelPort);
+        Assert.NotEqual(new LanConfig().Port, AgentEndpoint.FromArgs([]).TunnelPort);
+    }
 }

@@ -37,6 +37,7 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 builder.WebHost.ConfigureKestrel(k =>
 {
     k.Listen(IPAddress.Loopback, Port);
+    k.Listen(IPAddress.Loopback, endpoint.TunnelPort);
     // Wi-Fi / Tailscale: HTTPS with a pinned self-signed certificate, token required (see Lan.cs).
     if (lanCert is not null) k.Listen(IPAddress.Any, lanCfg.Port, l => l.UseHttps(lanCert));
 });
@@ -65,7 +66,6 @@ AddMonitor<GitHubMonitor>(builder.Services);
 AddMonitor<PingMonitor>(builder.Services);
 AddMonitor<AdbReverse>(builder.Services);
 AddMonitor<SessionLockMonitor>(builder.Services);
-AddMonitor<UpdateService>(builder.Services);
 AddMonitor<PrivacyMonitor>(builder.Services);
 AddMonitor<CalendarMonitor>(builder.Services);
 AddMonitor<DockerMonitor>(builder.Services);
@@ -112,20 +112,26 @@ app.Use((ctx, next) =>
 //  - Local port 8765 listens on 127.0.0.1 only; the Host check blocks DNS rebinding. The phone's USB proxy sends
 //    no Origin header; from browsers only the settings page itself (same origin) is accepted (no CSRF).
 //  - The optional Wi-Fi port only serves the phone API, only over TLS, and only with the paired token.
+//  - The USB tunnel port serves the same phone API with the same token: any app on the phone can open the tunnel.
 app.UseRouting();
 app.Use(async (ctx, next) =>
 {
     var origin = ctx.Request.Headers.Origin.ToString();
-    if (lanCert is not null && ctx.Connection.LocalPort == lanCfg.Port)
+    var viaLan = lanCert is not null && ctx.Connection.LocalPort == lanCfg.Port;
+    if (viaLan || ctx.Connection.LocalPort == endpoint.TunnelPort)
     {
-        // The phone's key opens the panel API; the separate webhook key opens only the webhook endpoints, in a header
-        // or, for senders that cannot set headers, in ?token= (URLs end up in logs, so it must not be the phone's key).
+        // The phone's key opens the panel API; over Wi-Fi the separate webhook key opens only the webhook endpoints, in a
+        // header or, for senders that cannot set headers, in ?token= (URLs end up in logs, so it must not be the phone's key).
         var lan = configStore.Get().Lan;
         var authorized = Lan.Matches(ctx.Request.Headers.Authorization, lan.Token!)
-            || (Lan.IsWebhook(ctx.Request.Path) && (Lan.Matches(ctx.Request.Headers.Authorization, lan.WebhookToken!)
+            || (viaLan && Lan.IsWebhook(ctx.Request.Path) && (Lan.Matches(ctx.Request.Headers.Authorization, lan.WebhookToken!)
                 || Lan.MatchesQuery(ctx.Request.Query["token"], lan.WebhookToken!)));
-        if (origin != "" || !Lan.AllowedOverLan(ctx.Request.Path) || !authorized)
+        var allowed = Lan.AllowedOverLan(ctx.Request.Path) || (!viaLan && ctx.Request.Path == "/api/pair");
+        if (origin != "" || !allowed || !authorized)
         {
+            // PhoneBox on USB without the current key (just installed, or a new key): hand it over again through adb.
+            // Another app sending this header only makes adb deliver the key to PhoneBox once more.
+            if (!viaLan && ctx.Request.Headers.ContainsKey("X-PhoneBox-App")) app.Services.GetRequiredService<AdbReverse>().ResendKey();
             ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
         }
@@ -145,9 +151,7 @@ app.Use(async (ctx, next) =>
     if (ctx.Request.Path.StartsWithSegments("/api/state") && ctx.Request.Headers.ContainsKey("X-PhoneBox-App"))
         Interlocked.Exchange(ref ApprovalStore.PhoneLastSeen, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
     if (ctx.Request.Headers.TryGetValue("X-PhoneBox-Device", out var device))
-        PhoneRegistry.Touch(device.ToString(), ctx.Request.Headers["X-PhoneBox-Model"].ToString(), ctx.Connection.LocalPort == Port ? "USB" : "Wi-Fi");
-    if (ctx.Request.Headers.TryGetValue("X-PhoneBox-App", out var appVersion) && appVersion.ToString().Length is > 0 and < 32)
-        UpdateService.AppVersion = appVersion.ToString();
+        PhoneRegistry.Touch(device.ToString(), ctx.Request.Headers["X-PhoneBox-Model"].ToString(), viaLan ? "Wi-Fi" : "USB");
     ctx.Response.Headers.CacheControl = "no-store";
     // only the panel may be framed, and only by the settings page itself (the live preview)
     ctx.Response.Headers["X-Frame-Options"] = ctx.Request.Path.StartsWithSegments("/panel") ? "SAMEORIGIN" : "DENY";
@@ -180,13 +184,6 @@ app.MapGet("/api/lan", (ConfigStore cfg) => Results.Json(new
     hosts = Lan.Addresses(),
     fingerprint = lanCert is null ? null : Lan.Fingerprint(lanCert),
 }));
-
-app.MapGet("/api/update", (UpdateService upd, ConfigStore cfg) => Results.Json(new { status = upd.Status(), auto = cfg.Get().Updates.Auto, installed = UpdateService.RunningInstalled }));
-// Settings › General: install the phone app on a phone that does not have it yet (local only).
-app.MapPost("/api/phone/install", async (UpdateService upd) =>
-    await upd.InstallAppAsync() is { } error ? Results.BadRequest(new { error }) : Results.Ok(new { ok = true }));
-app.MapPost("/api/update/check", async (UpdateService upd) => { await upd.CheckAsync(); return Results.Json(upd.Status()); });
-app.MapPost("/api/update/apply", (UpdateService upd) => { _ = Task.Run(() => upd.ApplyAsync()); return Results.Accepted(); });
 
 app.MapPost("/api/restart", (IHostApplicationLifetime life) =>
 {
@@ -309,11 +306,9 @@ app.MapPost("/api/refresh", (bool? reload, PushStore push) =>
 // ---------------------------------------------------------------- phone panel API
 object State(IServiceProvider sp, long? ev)
 {
-    var upd = sp.GetRequiredService<UpdateService>();
     var push = sp.GetRequiredService<PushStore>();
     return new
     {
-        update = upd.Status() is { } u && (u.AppUpdate || u.AgentUpdate) ? new { latest = u.Latest, app = u.AppUpdate, agent = u.AgentUpdate } : null,
         ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         host = Environment.MachineName,
         cfgVersion = sp.GetRequiredService<ConfigStore>().Version,
@@ -394,7 +389,7 @@ app.MapGet("/api/stream", async (HttpContext ctx, PushStore push, SessionMonitor
 {
     var ct = ctx.RequestAborted;
     var isPhone = ctx.Request.Headers.ContainsKey("X-PhoneBox-App");
-    var via = ctx.Connection.LocalPort == Port ? "USB/local" : "Wi-Fi";
+    var via = lanCert is not null && ctx.Connection.LocalPort == lanCfg.Port ? "Wi-Fi" : "USB/local";
     log.LogInformation("live stream opened ({Who}, {Via})", isPhone ? "phone" : "other client", via);
     ctx.Response.ContentType = "text/event-stream";
     ctx.Response.Headers["X-Accel-Buffering"] = "no";
@@ -543,7 +538,9 @@ app.Run();
 // Restart requested from the settings page (e.g. Wi-Fi turned on): hand over to a fresh instance.
 single.ReleaseMutex();
 single.Dispose();
-if (AppRestart.Requested && Environment.ProcessPath is { } exe)
+if (AppRestart.Requested && AppRestart.ServiceManaged(Environment.GetEnvironmentVariable("INVOCATION_ID"), Environment.GetEnvironmentVariable("XPC_SERVICE_NAME")))
+    Environment.ExitCode = AppRestart.ExitCodeForRestart;
+else if (AppRestart.Requested && Environment.ProcessPath is { } exe)
     System.Diagnostics.Process.Start(AppRestart.StartInfo(exe, args));
 
 static void AddMonitor<T>(IServiceCollection s) where T : class, IHostedService

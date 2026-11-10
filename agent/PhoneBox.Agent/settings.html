@@ -542,7 +542,7 @@ dd { margin: 0; word-break: break-all; }
         <h3>Phone connection</h3>
         <div class="grid2">
           <div class="field"><label>Phone to use</label><select id="serial"></select><span class="hint">If several Android devices are connected, choose which one runs the panel.</span>
-            <div class="row" id="appMissing" hidden style="margin-top:8px"><button class="btn primary sm" id="installApp">Install the phone app</button><span class="hint" id="appMissingText"></span></div></div>
+            <div class="row" id="appMissing" hidden style="margin-top:8px"><span class="hint" id="appMissingText"></span></div></div>
           <div class="field"><label>Path to adb.exe (empty = auto-detect)</label><input type="text" data-bind="adbPath" placeholder="auto-detected"><span class="hint" id="adbFound"></span></div>
         </div>
         <p id="usbProblem" hidden style="margin:10px 0 0;font-size:13px;color:var(--warn)"></p>
@@ -565,14 +565,6 @@ dd { margin: 0; word-break: break-all; }
           <div class="field"><label>Addresses offered to the phone</label><div id="lanHosts" class="hint">—</div></div>
         </div>
         <div class="row"><button class="btn" id="lanRegen">New key (unpair phones)</button><span class="hint" id="lanStatus"></span></div>
-      </div>
-      <div class="card">
-        <h3>Updates</h3>
-        <div class="row" style="margin-bottom:8px"><label class="switch"><input type="checkbox" data-bind="updates.auto"><span></span></label> Install new releases automatically</div>
-        <p class="hint" style="margin:0 0 12px">Checks <span id="updRepo"></span> on GitHub every 6 hours. The phone app is installed over USB without a prompt
-          on the phone; the agent replaces its own files and restarts.</p>
-        <dl id="updInfo"></dl>
-        <div class="row" style="margin-top:12px"><button class="btn" id="updCheck">Check now</button><button class="btn primary" id="updApply" hidden>Update now</button><span class="hint" id="updState"></span></div>
       </div>
     </section>
 
@@ -1464,17 +1456,6 @@ function renderCalendars() {
     h('input', { type: 'color', value: c.color || CAL_COLORS[i % CAL_COLORS.length], title: 'Colour', oninput: (e) => { c.color = e.target.value; changed(); } }),
     h('button', { class: 'btn sm danger', onclick: () => { cfg.calendars.splice(i, 1); renderCalendars(); changed(); } }, 'Remove'))));
 }
-$('installApp').onclick = async () => {
-  $('installApp').disabled = true;
-  $('appMissingText').textContent = 'downloading and installing… (allow it on the phone if it asks)';
-  try {
-    const r = await fetch('/api/phone/install', { method: 'POST' });
-    const j = await r.json().catch(() => ({}));
-    $('appMissingText').textContent = r.ok ? 'Installed — the panel opens in a few seconds' : (j.error || 'Could not install it');
-  } catch (_) { $('appMissingText').textContent = 'Could not install it'; }
-  $('installApp').disabled = false;
-  setTimeout(loadInfo, 4000);
-};
 $('haTest').onclick = async () => {
   $('haState').textContent = 'checking…';
   try {
@@ -2069,7 +2050,7 @@ async function loadInfo() {
     $('appMissing').hidden = !(i.appMissing && i.appMissing.length);
     $('usbProblem').hidden = !i.usbProblem;
     $('usbProblem').textContent = i.usbProblem ? '⚠ ' + i.usbProblem : '';
-    if (i.appMissing?.length) $('appMissingText').textContent = `${i.appMissing.join(', ')} has no PhoneBox app yet`;
+    if (i.appMissing?.length) $('appMissingText').textContent = `${i.appMissing.join(', ')} has no PhoneBox app yet; install it with ./scripts/install.sh --apk`;
     const sel = $('serial');
     const cur = cfg.deviceSerial || '';
     const opts = [['', 'All connected devices'], ...i.devices.map((d) => [d, d])];
@@ -2082,7 +2063,6 @@ async function loadInfo() {
       : 'No LAN or Tailscale address found';
     $('lanStatus').textContent = lan.active ? `Listening on port ${lan.port} (HTTPS)` : lan.configured ? 'Restart to start listening' : 'Off';
     $('restartBtn').hidden = !lan.restartNeeded;
-    renderUpdate(await (await fetch('/api/update')).json());
     renderWebhooks(lan);
     const hk = await (await fetch('/api/claude/hook')).json();
     $('hookState').textContent = hk.installed ? 'Installed in ' + hk.path : 'Not installed';
@@ -2102,7 +2082,7 @@ async function load() {
   const res = await fetch('/api/settings');
   cfgVersion = res.headers.get('X-Config-Version');
   cfg = await res.json();
-  cfg.pages ??= []; cfg.shortcuts ??= []; cfg.rules ??= []; cfg.display ??= {}; cfg.night ??= {}; cfg.weather ??= {}; cfg.lan ??= { enabled: false, port: 8766 }; cfg.updates ??= { auto: true, repo: 'ersinkoc/phonebox' }; cfg.claude ??= { phoneApprovals: true, timeoutSec: 90, onlyWhenAway: false };
+  cfg.pages ??= []; cfg.shortcuts ??= []; cfg.rules ??= []; cfg.display ??= {}; cfg.night ??= {}; cfg.weather ??= {}; cfg.lan ??= { enabled: false, port: 8766 }; cfg.claude ??= { phoneApprovals: true, timeoutSec: 90, onlyWhenAway: false };
   cfg.codexBar ??= { providers: ['claude', 'codex', 'antigravity'], rotate: true, pageSize: 2, rotateInterval: 8 };
   for (const [k, v] of Object.entries({ idleReturnSec: 90, switchCountdownSec: 3, touchGraceSec: 20, minDwellSec: 15, holdMaxMin: 30, keepAwake: true })) cfg.display[k] ??= v;
   cfg.charge ??= { enabled: false, min: 50, max: 80, method: 'ha' };
@@ -2125,28 +2105,6 @@ $('save').onclick = save;
 $('revert').onclick = () => { cfg = JSON.parse(saved); renderPages(); renderDeck(); renderRules(); renderCalendars(); renderPhones(); renderCharge(); bindForm(); changed(); };
 $('openPhone').onclick = async () => { await fetch('/api/phone/open', { method: 'POST' }); toast('Opening the panel on the phone'); };
 $('cityBtn').onclick = searchCity;
-function renderUpdate(u) {
-  const s = u.status;
-  $('updRepo').textContent = cfg.updates?.repo || 'ersinkoc/phonebox';
-  const line = (k, v) => [h('dt', {}, k), h('dd', {}, v)];
-  $('updInfo').replaceChildren(
-    ...line('Agent', s.agentVersion + (s.agentUpdate ? ` → ${s.latest}` : ' (up to date)') + (u.installed ? '' : ' · not the installed copy, updates itself only from %LOCALAPPDATA%\\PhoneBox\\app')),
-    ...line('Phone app', s.appVersion ? s.appVersion + (s.appUpdate ? ` → ${s.latest} (needs USB)` : ' (up to date)') : 'not seen yet'),
-    ...line('Latest release', s.latest ? s.latest : '—'),
-    ...line('Last check', s.lastCheck ? new Date(s.lastCheck).toLocaleString() : 'not yet'));
-  $('updApply').hidden = !(s.agentUpdate || s.appUpdate);
-  $('updState').textContent = s.error ? s.error : s.state !== 'idle' ? s.state + '…' : '';
-}
-$('updCheck').onclick = async () => {
-  $('updState').textContent = 'checking…';
-  await fetch('/api/update/check', { method: 'POST' });
-  loadInfo();
-};
-$('updApply').onclick = async () => {
-  await fetch('/api/update/apply', { method: 'POST' });
-  toast('Updating — the agent restarts by itself if it updates');
-  setTimeout(loadInfo, 3000);
-};
 $('lanRegen').onclick = () => {
   cfg.lan = { ...(cfg.lan || {}), token: '' };
   changed();

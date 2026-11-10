@@ -195,7 +195,6 @@ body.night #navCard, body.night #navChip { display: none; }
 .status .qm b { font-weight: 600; }
 .status .qm .sep { margin-right: 5px; }
 .status .smini { color: #fca5a5; font-weight: 600; }
-.status .upd { color: #93c5fd; font-weight: 600; }
 .dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--dim); transition: background .3s; }
 .dot.on { background: var(--ok); box-shadow: 0 0 8px rgba(34, 197, 94, .7); }
 .dot.off { background: var(--err); }

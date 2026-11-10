@@ -5,6 +5,12 @@ public sealed record AgentEndpoint(int Port = 8765)
 {
     public string SettingsUrl => $"http://127.0.0.1:{Port}/";
     public string MutexName => Port == 8765 ? @"Local\PhoneBox.Agent" : $@"Local\PhoneBox.Agent.{Port}";
+    /// <summary>
+    /// Loopback port the USB tunnel (adb reverse) leads to. Every app on the phone can reach the tunnel, so this port
+    /// asks for the phone's key like the Wi-Fi port; <see cref="Port"/> stays open for this computer only.
+    /// Must differ from the Wi-Fi port (8766 by default).
+    /// </summary>
+    public int TunnelPort => Port + 2;
 
     public static AgentEndpoint FromArgs(string[] args)
     {

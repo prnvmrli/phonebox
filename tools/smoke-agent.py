@@ -6,7 +6,7 @@ if os.name!='nt':exe.chmod(exe.stat().st_mode|0o111)
 base=f'http://127.0.0.1:{args.port}'
 with tempfile.TemporaryDirectory(prefix='phonebox-smoke-') as work:
  config=pathlib.Path(work)/'config.json'
- config.write_text(json.dumps({'deviceSerial':'__smoke_no_device__','updates':{'auto':False},'lan':{'enabled':False},'claude':{'phoneApprovals':False},'pages':[{'template':'home'}],'rules':[],'shortcuts':[]}))
+ config.write_text(json.dumps({'deviceSerial':'__smoke_no_device__','lan':{'enabled':False},'claude':{'phoneApprovals':False},'pages':[{'template':'home'}],'rules':[],'shortcuts':[]}))
  # A Windows helper may briefly inherit the agent's log handle. Keep capture outside the config directory
  # and let the temporary file's delete-on-close semantics handle it without masking configuration cleanup errors.
  with tempfile.TemporaryFile(mode='w+b') as log:

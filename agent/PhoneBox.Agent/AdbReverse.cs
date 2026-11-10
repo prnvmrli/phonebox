@@ -3,21 +3,28 @@ using System.Diagnostics;
 namespace PhoneBox.Agent;
 
 /// <summary>
-/// While a phone is connected over USB, keeps an "adb reverse tcp:8765 tcp:8765" rule in place so that
-/// 127.0.0.1:8765 on the phone reaches this agent. When a phone is newly plugged in, wakes it and opens the panel.
+/// While a phone is connected over USB, keeps an "adb reverse tcp:8765 tcp:8767" rule in place so that
+/// 127.0.0.1:8765 on the phone reaches this agent's tunnel port, and hands the phone app the key that port asks for.
+/// When a phone is newly plugged in, wakes it and opens the panel.
 /// </summary>
 public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEndpoint? endpoint = null) : BackgroundService
 {
     public const string PanelActivity = "net.oxog.phonebox.deskpanel/.MainActivity";
     private const string HomeAlias = "net.oxog.phonebox.deskpanel/.HomeAlias";
+    // only adb's shell may send to it (the receiver requires the DUMP permission, which apps cannot get)
+    private const string KeyReceiver = "net.oxog.phonebox.deskpanel/.UsbKeyReceiver";
     private readonly HashSet<string> _homeSet = [];
     private readonly HashSet<string> _awakeSet = [];
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _keySent = new();
     private volatile string[] _missingApp = [];
 
-    /// <summary>Connected phones that do not have the PhoneBox app yet (installed from Settings, e.g. after winget / Scoop).</summary>
+    /// <summary>Connected phones that do not have the PhoneBox app yet (install it with scripts/install.sh --apk).</summary>
     public string[] MissingApp => _missingApp;
     private const string Rule = "tcp:8765";
-    private string TargetRule => $"tcp:{endpoint?.Port ?? 8765}";
+    private string TargetRule => $"tcp:{(endpoint ?? new()).TunnelPort}";
+
+    /// <summary>The phone app was refused on the tunnel port: deliver the key again on the next round.</summary>
+    public void ResendKey() => _keySent.Clear();
 
     private string _lastState = "";
     private volatile string[] _devices = [];
@@ -111,12 +118,15 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
         foreach (var d in devices)
         {
             var list = await Adb(adb, $"-s {d} reverse --list", ct);
-            if (list.Contains(Rule) && !_missingApp.Contains(d)) continue;
+            // an older agent's rule (tcp:8765 to the open port) does not count
+            var ruleSet = list.Contains($"{Rule} {TargetRule}");
+            if (ruleSet && !_missingApp.Contains(d)) { await SendKeyAsync(adb, d, ct); continue; }
             // is the app there at all? (the agent may have been installed on its own, with winget or Scoop)
             var installed = (await Adb(adb, $"-s {d} shell pm path net.oxog.phonebox.deskpanel", ct)).Contains("package:");
             _missingApp = installed ? _missingApp.Where(x => x != d).ToArray() : _missingApp.Union([d]).ToArray();
-            if (!installed) { Report($"{d}: the PhoneBox app is not installed (Settings › General › Install the phone app)"); continue; }
-            if (list.Contains(Rule)) continue;
+            if (!installed) { Report($"{d}: the PhoneBox app is not installed (run scripts/install.sh --apk)"); continue; }
+            await SendKeyAsync(adb, d, ct);
+            if (ruleSet) continue;
             await Adb(adb, $"-s {d} reverse {Rule} {TargetRule}", ct);
             // A newly plugged-in phone must not light up while the computer is locked.
             if (cfg.Get().Display.FollowComputerLock && OperatingSystem.IsMacOS())
@@ -159,6 +169,17 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
         else _awakeSet.Clear();
         _awakeSet.IntersectWith(devices);
         Report($"phone connected: {Devices}");
+    }
+
+    /// <summary>Hands the phone app the key for the tunnel port, once per phone and key (again after a new key).</summary>
+    private async Task SendKeyAsync(string adb, string device, CancellationToken ct)
+    {
+        var key = cfg.Get().Lan.Token!; // base64url: safe on the phone's shell command line
+        if (_keySent.TryGetValue(device, out var sent) && sent == key) return;
+        // -f 32 = FLAG_INCLUDE_STOPPED_PACKAGES: a freshly installed app has not been started yet
+        await Adb(adb, $"-s {device} shell am broadcast -f 32 -n {KeyReceiver} --es token {key}", ct);
+        _keySent[device] = key;
+        log.LogInformation("{Device}: USB key handed to the phone app", device);
     }
 
     private void SetDevices(string[] devices)
