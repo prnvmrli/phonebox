@@ -59,10 +59,7 @@ These screenshots use made-up demo data. See the [changelog](CHANGELOG.md) for a
 
 ## Quick start
 
-**[Download PhoneBox 0.7.3](https://github.com/ersinkoc/phonebox/releases/tag/v0.7.3)** — signed Android APK and
-agents for Windows x64, Linux x64/ARM64 and macOS Apple Silicon/Intel. Agent archives need the matching .NET 10
-runtime (Desktop Runtime on Windows). The release includes SHA-256 checksums and build provenance.
-Existing users can update from Settings; existing layouts and pairing settings are retained.
+This fork is built from source only: nothing downloads or runs ready-made release files (see [Updates](#updates)).
 
 You need an Android 9+ phone with [USB debugging](https://developer.android.com/studio/debug/dev-options) turned on,
 the [.NET 10 SDK](https://dotnet.microsoft.com/download) and `adb`.
@@ -75,32 +72,27 @@ installer rebuilds it when Android sources are newer, or when `-BuildApk` is sup
 
 ```powershell
 winget install Microsoft.DotNet.SDK.10 Google.PlatformTools   # .NET 10 and adb
-git clone https://github.com/ersinkoc/phonebox
+git clone https://github.com/prnvmrli/phonebox
 cd phonebox
 .\scripts\install.ps1 -Apk -Autostart   # agent + phone app, start with Windows (add -Serial <id> if several devices are connected)
 ```
-
-Or install just the agent with **Scoop** and let it put the app on the phone (settings › General › *Install the
-phone app*, with the phone plugged in):
-
-```powershell
-scoop bucket add phonebox https://github.com/ersinkoc/phonebox
-scoop install phonebox/phonebox          # needs the .NET 10 Desktop Runtime and adb (scoop install extras/windowsdesktop-runtime main/adb)
-```
-
-A winget package (`ersinkoc.PhoneBox`) is prepared in [`packaging/winget`](packaging/winget) for submission to
-winget-pkgs; once accepted it installs with `winget install ersinkoc.PhoneBox`.
 
 **Linux** (Ubuntu, Debian, Fedora, Arch…) **and macOS**
 
 ```sh
 sudo apt install adb playerctl          # Fedora: android-tools playerctl · macOS: brew install android-platform-tools nowplaying-cli
-git clone https://github.com/ersinkoc/phonebox
+git clone https://github.com/prnvmrli/phonebox
 cd phonebox
-./scripts/install.sh --apk --autostart  # agent + phone app; systemd user service (Linux) or launchd agent (macOS)
+./scripts/install.sh --apk              # agent + phone app; on macOS also ~/Applications/PhoneBox.app
+                                        # add --autostart to start at login (systemd user service / launchd agent)
 ```
 
-Plug the phone in: it wakes up and opens the panel. The settings are at <http://127.0.0.1:8765> (on Windows also
+On macOS, opening **PhoneBox.app** starts the agent and opens the panel on the phone, clicking its Dock icon opens the
+settings, and quitting it stops the agent. The Android build needs JDK 17: run the installer with
+`JAVA_HOME=/opt/homebrew/opt/openjdk@17` if your default Java is newer.
+
+Plug the phone in, or connect it without a cable through **Wireless debugging** (Android 11+: Developer options ›
+Wireless debugging › Pair device with pairing code, then `adb pair <ip>:<port>` once): it wakes up and opens the panel. The settings are at <http://127.0.0.1:8765> (on Windows also
 from the tray icon). `scripts/uninstall.ps1 [-Purge] [-Apk]` / `scripts/uninstall.sh [--purge] [--apk]` remove
 everything again.
 
@@ -249,7 +241,7 @@ Double-click the tray icon on Windows (or open <http://127.0.0.1:8765>):
   wake it and open PhoneBox on unlock, with an ADB connection; phones secured by a PIN or password must be unlocked
   manually). Lock sync needs the agent to run in the macOS GUI session; [battery care](#rules);
   [Claude Code permission prompts](#claude-code-permission-prompts);
-  phones (several at once, each with its own pages); Wi-Fi & Tailscale; updates.
+  phones (several at once, each with its own pages); Wi-Fi & Tailscale.
 - **Advanced**: the raw JSON.
 
 Settings live in `%APPDATA%\PhoneBox\config.json` (Linux: `~/.config/PhoneBox`, macOS: `~/Library/Application Support/PhoneBox`);
@@ -354,12 +346,16 @@ them over Wi-Fi.
 
 ## Updates
 
-The agent checks the latest GitHub release every 6 hours (or **Settings › General › Updates › Check now**) and, with
-automatic updates on, installs the new APK on the phone with `adb install -r` while it is plugged in (no prompt on the
-phone; over Wi-Fi the panel shows "plug in USB to update") and replaces its own files, then restarts. Android only
-accepts an update signed with the same key as the installed app; the agent never uninstalls to force one.
-When GitHub turns away anonymous requests (it answers 503 / 504 now and then), the agent asks again with the
-[GitHub CLI](https://cli.github.com)'s token if `gh` is signed in; the token only goes to `api.github.com`.
+This fork has no self-updater: the agent never downloads, installs or runs release files, so only code you built
+from this source runs on your computer and phone. To update, pull, read the changes, and run the installer again:
+
+```sh
+git pull
+./scripts/install.sh --apk   # Windows: .\scripts\install.ps1 -Apk
+```
+
+To look at the original project's ([ersinkoc/phonebox](https://github.com/ersinkoc/phonebox)) changes before taking
+any: `git remote add upstream https://github.com/ersinkoc/phonebox && git fetch upstream && git log -p main..upstream/main`.
 See the [changelog](CHANGELOG.md).
 
 ## How it works
@@ -391,7 +387,10 @@ flowchart LR
 - The agent listens on `127.0.0.1` only. Requests with a foreign `Host` header (DNS rebinding) or a cross-site
   `Origin` (CSRF) are rejected; only the settings page itself is accepted from browsers.
 - The optional Wi-Fi port (8766) only serves the panel API, only over TLS pinned to the paired certificate, and only
-  with the paired key. Settings, shortcut tests and pairing stay local. **New key** in the settings unpairs all phones.
+  with the paired key. Settings and shortcut tests stay local. **New key** in the settings unpairs all phones.
+- The USB tunnel (`adb reverse`, phone port 8765 → computer port 8767) asks for the same key: every app on the phone
+  can reach the tunnel, not only PhoneBox. The agent hands the key to the PhoneBox app through adb, to a receiver only
+  adb's shell may send to (it requires the `DUMP` permission, which apps cannot get).
 - The phone only ever sends a shortcut **id**; commands are defined on the PC. Command widgets work the same way:
   the phone asks for a widget's output and never sees the command.
 - Webhooks from other machines need the separate webhook key, which cannot open the phone API and can be replaced
@@ -424,7 +423,7 @@ accept the USB debugging prompt on the phone. If several devices are connected, 
 
 The panel carries on over Wi-Fi when Wi-Fi is on, and **Settings › General › Phone connection** says what the phone
 itself sees: if it is charging but has no USB data connection, the cable or the port only carries power — try another
-cable, or a port straight on the computer instead of a hub or a front-panel port. Updates of the phone app need USB.
+cable, or a port straight on the computer instead of a hub or a front-panel port.
 </details>
 
 <details><summary><b>Some widgets show "—" or "No data".</b></summary>
@@ -436,12 +435,6 @@ GitHub needs `gh auth login`, quotas and sessions need Claude Code / Codex to ha
 <details><summary><b>I want the volume keys to change the phone's volume.</b></summary>
 
 Turn off **Settings › General › Display › The phone's volume keys switch pages**.
-</details>
-
-<details><summary><b>The update was not installed on the phone.</b></summary>
-
-App updates need USB (Android installs them through adb without a prompt). They also need to be signed with the same
-key as the installed app — if you built the app yourself, keep using your own release key.
 </details>
 
 <details><summary><b>Can I use it without root?</b></summary>
@@ -489,7 +482,7 @@ Templates live in [`templates.json`](agent/PhoneBox.Agent/templates.json).
 To check a development agent beside an installed one, run it with an isolated settings file and port, for example
 `PhoneBoxAgent.exe --config "D:\test folder\config.json" --port 18765`. Settings and browser checks use
 `http://127.0.0.1:18765/`; restarts preserve these arguments. The ordinary port remains 8765. Set `deviceSerial`
-explicitly in the test settings (an unmatched serial disables USB attachment) and turn off automatic updates.
+explicitly in the test settings (an unmatched serial disables USB attachment).
 USB clients still use phone port 8765; do not assign the same phone to two agents at once.
 
 Release APKs are signed with your own key when `PHONEBOX_STORE_FILE`, `PHONEBOX_STORE_PASSWORD`, `PHONEBOX_KEY_ALIAS`
