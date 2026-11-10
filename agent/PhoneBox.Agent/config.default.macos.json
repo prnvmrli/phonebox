@@ -40,7 +40,7 @@
     { "id": "files", "label": "Finder", "icon": "📁", "color": "#e5b84b", "cmd": "open", "args": "~" },
     { "id": "vscode", "label": "VS Code", "icon": "📝", "color": "#2f80ed", "cmd": "open", "args": "-a \"Visual Studio Code\"" },
     { "id": "browser", "label": "Browser", "icon": "🌐", "color": "#0ea5e9", "cmd": "https://github.com" },
-    { "id": "spotify", "label": "Spotify", "icon": "🎧", "color": "#1db954", "cmd": "open", "args": "-a Spotify" },
+    { "id": "ytmusic", "label": "YouTube Music", "icon": "🎵", "color": "#ff0000", "cmd": "https://music.youtube.com" },
     { "id": "calc", "label": "Calculator", "icon": "🧮", "color": "#64748b", "cmd": "open", "args": "-a Calculator" },
     { "id": "settings", "label": "Settings", "icon": "⚙️", "color": "#94a3b8", "cmd": "open", "args": "-a \"System Settings\"" },
     { "id": "monitor", "label": "Activity Monitor", "icon": "📊", "color": "#22c55e", "cmd": "open", "args": "-a \"Activity Monitor\"" },
