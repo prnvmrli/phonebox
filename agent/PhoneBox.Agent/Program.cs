@@ -385,9 +385,11 @@ app.MapGet("/api/state", (long? ev, HttpContext ctx) => Results.Json(State(ctx.R
 
 // Live stream (server-sent events) for the phone: "state" every second, "event" as soon as one happens, "work" when it
 // changes. The Android shell keeps one connection open instead of polling; the panel falls back to polling without it.
-app.MapGet("/api/stream", async (HttpContext ctx, PushStore push, SessionMonitor sessions, GitHubMonitor gh, ILogger<Program> log) =>
+app.MapGet("/api/stream", async (HttpContext ctx, PushStore push, SessionMonitor sessions, GitHubMonitor gh, IHostApplicationLifetime life, ILogger<Program> log) =>
 {
-    var ct = ctx.RequestAborted;
+    // end with the agent too: the server waits for open requests before it exits (Quit, restart, SIGTERM)
+    using var stop = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted, life.ApplicationStopping);
+    var ct = stop.Token;
     var isPhone = ctx.Request.Headers.ContainsKey("X-PhoneBox-App");
     var via = lanCert is not null && ctx.Connection.LocalPort == lanCfg.Port ? "Wi-Fi" : "USB/local";
     log.LogInformation("live stream opened ({Who}, {Via})", isPhone ? "phone" : "other client", via);

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PhoneBox installer for Linux and macOS.
 #
-#   ./scripts/install.sh                 # build and install the agent, then start it
+#   ./scripts/install.sh                 # build and install the agent, then start it (macOS: as ~/Applications/PhoneBox.app)
 #   ./scripts/install.sh --autostart     # ... and start it at login (systemd user service / launchd agent)
 #   ./scripts/install.sh --apk           # ... and install the panel app on the connected phone
 #   ./scripts/install.sh --serial <id>   # pick the phone when several devices are connected
@@ -65,6 +65,34 @@ cp -R "$tmp/." "$app/"
 chmod +x "$app/PhoneBoxAgent"
 if [ "$os" = osx ]; then codesign --force --deep --sign - "$app/PhoneBoxAgent" >/dev/null 2>&1 || true; fi # macOS refuses unsigned binaries it has quarantined
 
+if [ "$os" = osx ]; then
+  # A Dock app: opening it starts the agent, clicking its icon opens the settings, quitting it stops the agent.
+  echo "==> Creating ~/Applications/PhoneBox.app"
+  bundle="$HOME/Applications/PhoneBox.app"
+  mkdir -p "$HOME/Applications"
+  rm -rf "$bundle"
+  osacompile -s -o "$bundle" <<EOF
+property agentPath : "$app/PhoneBoxAgent"
+on run
+	-- detached from this script's output, or "do shell script" (and so Quit) waits for the agent to end
+	do shell script "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin DOTNET_ROOT=" & quoted form of "$DOTNET_ROOT" & "; (pgrep -x PhoneBoxAgent || exec " & quoted form of agentPath & ") >/dev/null 2>&1 </dev/null &"
+end run
+on reopen
+	open location "http://127.0.0.1:8765/"
+end reopen
+on quit
+	do shell script "pkill -x PhoneBoxAgent || true"
+	continue quit
+end quit
+EOF
+  # PhoneBox's icon instead of the script icon (the asset catalog would win over applet.icns)
+  sips -s format icns "$root/agent/PhoneBox.Agent/phonebox.ico" --out "$bundle/Contents/Resources/applet.icns" >/dev/null
+  rm -f "$bundle/Contents/Resources/Assets.car"
+  plutil -remove CFBundleIconName "$bundle/Contents/Info.plist"
+  plutil -replace CFBundleIdentifier -string net.oxog.phonebox.app "$bundle/Contents/Info.plist"
+  codesign --force --deep --sign - "$bundle" >/dev/null 2>&1
+fi
+
 if [ "$autostart" = 1 ]; then
   if [ "$os" = linux ]; then
     echo "==> Adding a systemd user service (starts at login)"
@@ -106,6 +134,9 @@ EOF
 EOF
     launchctl load "$plist"
   fi
+elif [ "$os" = osx ]; then
+  echo "==> Starting PhoneBox.app"
+  open "$bundle"
 else
   echo "==> Starting the agent"
   nohup "$app/PhoneBoxAgent" >/dev/null 2>&1 &

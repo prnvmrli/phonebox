@@ -11,6 +11,8 @@ if [ "$(uname -s)" = Darwin ]; then
   plist="$HOME/Library/LaunchAgents/net.oxog.phonebox.agent.plist"
   launchctl unload "$plist" 2>/dev/null || true
   rm -f "$plist"
+  osascript -e 'quit app id "net.oxog.phonebox.app"' 2>/dev/null || true
+  rm -rf "$HOME/Applications/PhoneBox.app"
   base="$HOME/Library/Application Support/PhoneBox"
   conf="$base"
 else
