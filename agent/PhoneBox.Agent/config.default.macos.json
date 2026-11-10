@@ -46,6 +46,7 @@
     { "id": "monitor", "label": "Activity Monitor", "icon": "📊", "color": "#22c55e", "cmd": "open", "args": "-a \"Activity Monitor\"" },
     { "id": "mute", "label": "Mute", "icon": "🔇", "color": "#f59e0b", "cmd": "builtin:mute" },
     { "id": "monitoroff", "label": "Screen Off", "icon": "🌙", "color": "#6366f1", "cmd": "builtin:monitor-off" },
+    { "id": "wake", "label": "Wake", "icon": "☀️", "color": "#eab308", "cmd": "caffeinate", "args": "-u -t 2" },
     { "id": "lock", "label": "Lock", "icon": "🔒", "color": "#ef4444", "cmd": "builtin:lock" }
   ]
 }
