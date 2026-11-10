@@ -168,9 +168,11 @@ public static class ClaudeHook
             if (hooks.Count > 0) root["hooks"] = hooks; else root.Remove("hooks");
 
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-            var tmp = SettingsPath + ".tmp";
+            // settings.json is often a link into a dotfiles repository: write the file it points to, keep the link
+            var target = new FileInfo(SettingsPath).ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? SettingsPath;
+            var tmp = target + ".tmp";
             File.WriteAllText(tmp, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
-            File.Move(tmp, SettingsPath, overwrite: true);
+            File.Move(tmp, target, overwrite: true);
             return null;
         }
         catch (Exception ex) { return ex.Message; }

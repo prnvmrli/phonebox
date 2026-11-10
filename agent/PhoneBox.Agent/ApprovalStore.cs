@@ -38,10 +38,9 @@ public sealed class ApprovalStore(PushStore events, ILogger<ApprovalStore> log)
         {
             var timeout = TimeSpan.FromMilliseconds(Math.Max(1000, a.ExpiresAt - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
             // The hook process goes away when the user answers in the terminal; that cancels the request here.
-            var done = await Task.WhenAny(pending.Decision.Task, Task.Delay(timeout, aborted));
-            return done == pending.Decision.Task ? await pending.Decision.Task : null;
+            return await pending.Decision.Task.WaitAsync(timeout, aborted);
         }
-        catch (OperationCanceledException) { return null; }
+        catch (Exception ex) when (ex is OperationCanceledException or TimeoutException) { return null; }
         finally
         {
             _pending.TryRemove(a.Id, out _);
