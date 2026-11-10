@@ -15,6 +15,7 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
     private const string KeyReceiver = "net.oxog.phonebox.deskpanel/.UsbKeyReceiver";
     private readonly HashSet<string> _homeSet = [];
     private readonly HashSet<string> _awakeSet = [];
+    private readonly HashSet<string> _opened = [];
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _keySent = new();
     private volatile string[] _missingApp = [];
 
@@ -115,19 +116,22 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
         if (devices.Length == 0) { Report("no phone connected, waiting..."); return; }
 
         _missingApp = _missingApp.Where(devices.Contains).ToArray();
+        _opened.IntersectWith(devices); // a phone that comes back gets the panel again
         foreach (var d in devices)
         {
             var list = await Adb(adb, $"-s {d} reverse --list", ct);
             // an older agent's rule (tcp:8765 to the open port) does not count
             var ruleSet = list.Contains($"{Rule} {TargetRule}");
-            if (ruleSet && !_missingApp.Contains(d)) { await SendKeyAsync(adb, d, ct); continue; }
+            if (ruleSet && !_missingApp.Contains(d) && _opened.Contains(d)) { await SendKeyAsync(adb, d, ct); continue; }
             // is the app there at all? (the agent may have been installed on its own, with winget or Scoop)
             var installed = (await Adb(adb, $"-s {d} shell pm path net.oxog.phonebox.deskpanel", ct)).Contains("package:");
             _missingApp = installed ? _missingApp.Where(x => x != d).ToArray() : _missingApp.Union([d]).ToArray();
             if (!installed) { Report($"{d}: the PhoneBox app is not installed (run scripts/install.sh --apk)"); continue; }
             await SendKeyAsync(adb, d, ct);
-            if (ruleSet) continue;
-            await Adb(adb, $"-s {d} reverse {Rule} {TargetRule}", ct);
+            if (!ruleSet) await Adb(adb, $"-s {d} reverse {Rule} {TargetRule}", ct);
+            // Open the panel once per connection and agent run: the rule outlives the agent, so a started agent
+            // (e.g. PhoneBox.app opened) finds it in place for a phone that is still connected.
+            if (!_opened.Add(d)) continue;
             // A newly plugged-in phone must not light up while the computer is locked.
             if (cfg.Get().Display.FollowComputerLock && OperatingSystem.IsMacOS())
             {
@@ -137,7 +141,7 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
             {
                 await Adb(adb, $"-s {d} shell input keyevent KEYCODE_WAKEUP", ct);
                 await Adb(adb, $"-s {d} shell am start -n {PanelActivity}", ct);
-                log.LogInformation("{Device}: adb reverse set up, panel opened", d);
+                log.LogInformation("{Device}: panel opened", d);
             }
         }
         // Settings › Display › home screen: the app offers itself as a home app; make it the default one (no root needed).

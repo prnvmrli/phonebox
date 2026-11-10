@@ -55,7 +55,10 @@ app="$("$tmp/PhoneBoxAgent" --print-install-dir)"
 
 echo "==> Stopping a running agent"
 if [ "$os" = linux ] && command -v systemctl >/dev/null; then systemctl --user stop phonebox.service 2>/dev/null || true; fi
-if [ "$os" = osx ]; then launchctl unload "$HOME/Library/LaunchAgents/net.oxog.phonebox.agent.plist" 2>/dev/null || true; fi
+if [ "$os" = osx ]; then
+  launchctl unload "$HOME/Library/LaunchAgents/net.oxog.phonebox.agent.plist" 2>/dev/null || true
+  osascript -e 'if application id "net.oxog.phonebox.app" is running then quit application id "net.oxog.phonebox.app"' 2>/dev/null || true
+fi
 pkill -x PhoneBoxAgent 2>/dev/null || true
 sleep 0.5
 
